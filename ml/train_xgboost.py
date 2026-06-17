@@ -3,7 +3,8 @@ from pathlib import Path
 from make_dataset import make_dataset
 from get_api_profile import get_api_profile, load_api_properties
 from formulation_run_db import get_run_db_path, save_run
-from lipid_utils import get_lipid_type_fraction_columns, sort_lipids, build_formulation_row, LIPID_PRIORITY
+from lipid_utils import get_available_lipids, extract_present_lipids, lipid_name_from_column
+from formulation_utils import generate_candidates, sort_lipid_weight_pairs, build_formulation_row
 
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -41,31 +42,6 @@ def objective(trial, X, y):
 
     return -np.mean(scores)
 
-def generate_candidates(X_columns, api_profile, n_samples=5000):
-    lipids = get_lipid_type_fraction_columns(X_columns)
-
-    candidates = []
-
-    for _ in range(n_samples):
-        # velg 1-3 lipider, sorter dem basert på type
-        chosen = np.random.choice(lipids, size=np.random.randint(1, 4), replace=False)
-        chosen = sort_lipids(chosen)
-
-        weights = np.random.dirichlet(np.ones(len(chosen)))
-
-        row = build_formulation_row(
-            X_columns=X_columns,
-            chosen_lipids=chosen,
-            weights=weights,
-            api_ratio=np.random.uniform(0.05, 0.20),
-            api_profile=api_profile,
-        )
-
-        candidates.append(row)
-
-    return pd.DataFrame(candidates)
-
-
 def suggest_formulations(model, X_columns, api_profile):
     candidates = generate_candidates(X_columns, api_profile)
 
@@ -77,10 +53,8 @@ def suggest_formulations(model, X_columns, api_profile):
 
     return top
 
-def formulation_objective(trial, model, X_columns):
-    row = dict.fromkeys(X_columns, 0)
-
-    lipids = get_lipid_type_fraction_columns(X_columns)
+def formulation_objective(trial, model, X_columns, api_profile=None):
+    lipids = get_available_lipids(X_columns)
 
     # velg antall lipider
     n_lipids = trial.suggest_int("n_lipids", 1, 3)
@@ -103,25 +77,21 @@ def formulation_objective(trial, model, X_columns):
 
     weights = weights / weights.sum()
 
-    # -----------------------------
     # Sort lipids AND weights together
-    # -----------------------------
-    pairs = sorted(
-        zip(chosen, weights),
-        key=lambda x: LIPID_PRIORITY.get(
-            x[0].replace("lipid_", "").replace("_fraction", ""),
-            999
+    chosen, weights = sort_lipid_weight_pairs(
+        chosen,
+        weights
+        )
+
+    api_ratio = trial.suggest_float("api_ratio", 0.05, 0.20)
+
+    row = build_formulation_row(
+        X_columns=X_columns,
+        chosen_lipids=chosen,
+        weights=weights,
+        api_ratio=api_ratio,
+        api_profile=api_profile
     )
-    )
-
-    # unpack sorted pairs
-    chosen = [p[0] for p in pairs]
-    weights = np.array([p[1] for p in pairs])
-
-    # API ratio (Optuna optimaliserer)
-    row["api_to_lipid_ratio"] = trial.suggest_float("api_ratio", 0.05, 0.20)
-
-    row["n_lipids"] = len(chosen)
 
     df = pd.DataFrame([row])
     pred = model.predict(df)[0]
@@ -232,7 +202,7 @@ def main():
     formulation_study = optuna.create_study(direction="maximize")
 
     formulation_study.optimize(
-        lambda trial: formulation_objective(trial, best_model, X.columns),
+        lambda trial: formulation_objective(trial, best_model, X.columns, api_profile),
         n_trials=100
     )
 
