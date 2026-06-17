@@ -7,36 +7,9 @@ from sklearn.preprocessing import StandardScaler
 
 from get_api_profile import load_api_properties, get_api_profile
 from make_dataset import make_dataset
-from lipid_utils import get_lipid_type_fraction_columns, sort_lipids, build_formulation_row, LIPID_PRIORITY
+from lipid_utils import get_lipid_type_fraction_columns, sort_lipids, build_formulation_row, extract_present_lipids, lipid_name_from_column
+from formulation_utils import generate_candidates
 
-
-# -----------------------------
-# Candidate generation
-# -----------------------------
-def generate_candidates(X_columns, api_profile, n_samples=5000):
-    lipids = get_lipid_type_fraction_columns(X_columns)
-
-    candidates = []
-
-    for _ in range(n_samples):
-        # choose 1–3 lipids, sort them based on type
-        chosen = np.random.choice(lipids, size=np.random.randint(1, 4), replace=False)
-        chosen = sort_lipids(chosen)
-
-        weights = np.random.dirichlet(np.ones(len(chosen)))
-
-        row = build_formulation_row(
-            X_columns=X_columns,
-            chosen_lipids=chosen,
-            weights=weights,
-            api_ratio=np.random.uniform(0.05, 0.20),
-            api_profile=api_profile,
-        )
-
-
-        candidates.append(row)
-
-    return pd.DataFrame(candidates)
 
 def compute_novelty(candidates, X_train):
 
@@ -178,23 +151,16 @@ def format_formulations(df):
         entry["api_to_lipid_ratio"] = round(row["api_to_lipid_ratio"], 3)
 
         # Extract ONLY lipids that are actually present
-        present = []
+        present = extract_present_lipids(row, lipid_cols, threshold=0.01)
 
-        for col in lipid_cols:
-            if row[col] > 0.01:
-                name = col.replace("lipid_", "").replace("_fraction", "")
-                frac = round(row[col], 3)
+        sorted_lipids = sort_lipids(list(present.keys()))
 
-                present.append((name, frac))
+        entry["lipids"] = {
+            lipid_name_from_column(col): round(present[col], 3)
+            for col in sorted_lipids
+        }
 
-        # sort by priority
-        present = sorted(
-            present,
-            key=lambda x: LIPID_PRIORITY.get(x[0], 999)
-        )
-
-        entry["lipids"] = dict(present)
-        entry["n_lipids"] = len(present)
+        entry["n_lipids"] = len(sorted_lipids)
 
         # Results
         entry["mean_ee"] = round(row["mean_ee"], 2)
