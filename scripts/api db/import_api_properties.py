@@ -27,23 +27,31 @@ def main():
     df = df.rename(columns={
         "API name": "api",
         "Molecular weight (g/mol)": "molecular_weight",
+        "LogP": "logp",
         "Rotatable bond count": "rotatable_bond_count",
         "Hydrogen bond acceptor count": "hbond_acceptor_count",
         "Hydrogen bond donor count": "hbond_donor_count",
         "Heavy atom count": "heavy_atom_count",
         "Topological polar surface area (Å2)": "tpsa",
-        "Complexity": "complexity"
+        "Complexity": "complexity",
+        "Defined atom stereocenter count": "defined_atom_stereocenter_count",
+        "Defined bond stereocenter count": "defined_bond_stereocenter_count",
+        "Number of rings": "number_of_rings"
     })
 
     # ---------- Rydd numeriske kolonner ----------
     numeric_cols = [
         "molecular_weight",
+        "logp",
         "rotatable_bond_count",
         "hbond_acceptor_count",
         "hbond_donor_count",
         "heavy_atom_count",
         "tpsa",
-        "complexity"
+        "complexity",
+        "defined_atom_stereocenter_count",
+        "defined_bond_stereocenter_count",
+        "number_of_rings"
     ]
 
     for col in numeric_cols:

@@ -1,6 +1,5 @@
 
 from pathlib import Path
-import sqlite3
 import pandas as pd
 import numpy as np
 from feature_engineering import load_and_engineer_features
@@ -49,12 +48,16 @@ def make_dataset(db_path: Path, api_db_path: Path, lipid_db_path: Path):
 
     api_feature_cols = [
         "api_molecular_weight",
+        "api_logp",
         "api_rotatable_bond_count",
         "api_hbond_acceptor_count",
         "api_hbond_donor_count",
         "api_heavy_atom_count",
         "api_tpsa",
-        "api_complexity"
+        "api_complexity",
+        "api_defined_atom_stereocenter_count",
+        "api_defined_bond_stereocenter_count",
+        "api_number_of_rings"
     ]
 
     # Lag missing flags
@@ -93,7 +96,7 @@ def make_dataset(db_path: Path, api_db_path: Path, lipid_db_path: Path):
     print("X shape:", X.shape)
     print("y shape:", y.shape)
 
-    return X, y
+    return X, y, df["api"]
 
 def compute_lipid_features(row, lipid_df):
     lipid_names = [row["lipid_1"], row["lipid_2"], row["lipid_3"]]
@@ -217,7 +220,7 @@ if __name__ == "__main__":
     API_DB_PATH = BASE_DIR / "db" / "work" / "api_properties.db"
     LIPID_DB_PATH = BASE_DIR / "db" / "work" / "lipid_properties.db"
 
-    X, y = make_dataset(DB_PATH, API_DB_PATH, LIPID_DB_PATH)
+    X, y, groups = make_dataset(DB_PATH, API_DB_PATH, LIPID_DB_PATH)
 
     #Feilsøking:
     df_debug = X.copy()

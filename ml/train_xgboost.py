@@ -3,10 +3,11 @@ from pathlib import Path
 from make_dataset import make_dataset
 from get_api_profile import get_api_profile, load_api_properties
 from formulation_run_db import get_run_db_path, save_run
-from lipid_utils import get_available_lipids, extract_present_lipids, lipid_name_from_column
+from lipid_utils import get_available_lipids
 from formulation_utils import generate_candidates, sort_lipid_weight_pairs, build_formulation_row
 
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import cross_val_score, GroupKFold
+from train_test_splits import create_split
 from sklearn.metrics import mean_absolute_error, r2_score
 
 import xgboost as xgb
@@ -16,7 +17,7 @@ import pandas as pd
 import joblib
 
 
-def objective(trial, X, y):
+def objective(trial, X, y, groups):
     params = {
         "n_estimators": trial.suggest_int("n_estimators", 200, 1000),
         "max_depth": trial.suggest_int("max_depth", 3, 10),
@@ -31,11 +32,14 @@ def objective(trial, X, y):
 
     model = xgb.XGBRegressor(**params)
 
+    cv = GroupKFold(n_splits=5)
+
     scores = cross_val_score(
         model,
         X,
         y,
-        cv=5,
+        groups=groups,
+        cv=cv,
         scoring="neg_mean_absolute_error",
         n_jobs=-1
     )
@@ -130,7 +134,7 @@ def main():
     LIPID_DB_PATH = BASE_DIR / "db" / "work" / "lipid_properties.db"
 
     # ---------- Last datasett ----------
-    X, y = make_dataset(DB_PATH, API_DB_PATH, LIPID_DB_PATH)
+    X, y, groups = make_dataset(DB_PATH, API_DB_PATH, LIPID_DB_PATH)
 
     print("Dataset:")
     print("X shape:", X.shape)
@@ -138,18 +142,41 @@ def main():
     print()
 
     # ---------- Split ----------
-    X_train, X_test, y_train, y_test = train_test_split(
+    SPLIT_MODE = "within_api" # "random" or "api" or "within_api"
+
+    train_idx, test_idx = create_split(
         X,
         y,
-        test_size=0.2,
-        random_state=42
+        groups,
+        SPLIT_MODE
     )
+
+
+    X_train = X.iloc[train_idx]
+    X_test = X.iloc[test_idx]
+
+    y_train = y.iloc[train_idx]
+    y_test = y.iloc[test_idx]
+
+    groups_train = groups.iloc[train_idx]
+    groups_test = groups.iloc[test_idx]
+
+
+    # TEST
+    print("Train groups:")
+    print(groups_train.value_counts())
+
+    print("\nTest groups:")
+    print(groups_test.value_counts())
+
+    print("\nNumber of test samples:", len(test_idx))
+
 
     # ---------- Bayesian optimization ----------
     print("Running Bayesian optimization...")
 
     study = optuna.create_study(direction="minimize")
-    study.optimize(lambda trial: objective(trial, X_train, y_train), n_trials=50)
+    study.optimize(lambda trial: objective(trial, X_train, y_train, groups_train), n_trials=50)
 
     print("Best parameters:")
     print(study.best_params)
@@ -235,21 +262,24 @@ def main():
     )
     print(f"\n✅ Run saved to database: {run_db_path}")
 
+    MODEL_DIR = BASE_DIR / "models"
+    MODEL_DIR.mkdir(exist_ok=True)
+
     for i in range(5):
+
         model = xgb.XGBRegressor(
-            n_estimators=800,
-            max_depth=6,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            random_state=42 + i,
+            **study.best_params,
+            objective="reg:squarederror",
+            random_state=42+i,
             n_jobs=-1
         )
 
         model.fit(X_train, y_train)
 
-        MODEL_DIR = BASE_DIR / "models"
-        joblib.dump(model, MODEL_DIR / f"xgb_model_{i}.pkl")
+        joblib.dump(
+            model,
+            MODEL_DIR / f"xgb_model_{i}.pkl"
+        )
 
 
 if __name__ == "__main__":
