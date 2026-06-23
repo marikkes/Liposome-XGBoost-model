@@ -3,7 +3,7 @@ from pathlib import Path
 
 # NOT IN USE!!
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "db" / "work" / "api_properties.db"
 
 def create_database():
@@ -24,7 +24,9 @@ def create_database():
         heavy_atom_count INTEGER,
         tpsa REAL,  -- Topological Polar Surface Area
 
-        complexity REAL
+        complexity REAL,
+                   
+        logp REAL
     );
     """)
 
