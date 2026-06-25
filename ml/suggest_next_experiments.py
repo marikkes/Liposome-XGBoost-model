@@ -43,8 +43,40 @@ def normalize(x):
 # -----------------------------
 # Acquisition function
 # -----------------------------
-def acquisition(mean, std, novelty, beta=1.5, gamma=0.5):
-    return normalize(mean) + beta * normalize(std) + gamma * normalize(novelty)
+def acquisition(mean, std, novelty, mode="exploration"):
+    """
+    Calculate acquisition score for selecting next experiments.
+
+    mode:
+        - exploitation: prioritize high predicted EE
+        - exploration: balance predicted EE, uncertainty, and novelty
+    """
+
+    mean_norm = normalize(mean)
+    std_norm = normalize(std)
+    novelty_norm = normalize(novelty)
+
+    if mode == "exploitation":
+
+        score = mean_norm
+
+    elif mode == "exploration":
+
+        beta = 1.5
+        gamma = 0.5
+
+        score = (
+            mean_norm
+            + beta * std_norm
+            + gamma * novelty_norm
+        )
+
+    else:
+        raise ValueError(
+            "mode must be either 'exploitation' or 'exploration'"
+        )
+
+    return score
 #Want to obtain max EE and max uncertainty and difference from previous results
 
 # -----------------------------
@@ -118,7 +150,7 @@ def select_diverse_top(df, n_select=10, random_state=42):
 # -----------------------------
 # Suggest experiments
 # -----------------------------
-def suggest_next(models, X_train, X_columns, api_profile, n_suggestions=5, n_candidates=5000):
+def suggest_next(models, X_train, X_columns, api_profile, n_suggestions=5, n_candidates=5000, acquisition_mode="exploration"):
 
     candidates = generate_candidates(X_columns, api_profile, n_candidates)
 
@@ -130,7 +162,7 @@ def suggest_next(models, X_train, X_columns, api_profile, n_suggestions=5, n_can
     candidates["uncertainty"] = std
     candidates["novelty"] = novelty
 
-    candidates["score"] = acquisition(mean, std, novelty)
+    candidates["score"] = acquisition(mean, std, novelty, mode=acquisition_mode)
 
     top = select_diverse_top(candidates, n_suggestions)
 
@@ -195,7 +227,8 @@ def main():
     models = load_models(MODEL_DIR, n_models=5)
 
     print("Generating next experiments...")
-    top = suggest_next(models, X, X.columns, api_profile)
+    # Change mode here to "exploitation" if you want to prioritize high predicted EE
+    top = suggest_next(models, X, X.columns, api_profile, acquisition_mode="exploration")
 
     print("\nTop next experiments:")
     formatted = format_formulations(top)

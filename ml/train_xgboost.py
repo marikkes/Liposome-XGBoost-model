@@ -4,7 +4,7 @@ from make_dataset import make_dataset
 from get_api_profile import get_api_profile, load_api_properties
 from formulation_run_db import get_run_db_path, save_run
 from lipid_utils import get_available_lipids
-from formulation_utils import generate_candidates, sort_lipid_weight_pairs, build_formulation_row
+from formulation_utils import generate_candidates, sort_lipid_weight_pairs, build_formulation_row, generate_lipid_weights
 
 from sklearn.model_selection import cross_val_score, GroupKFold
 from train_test_splits import create_split
@@ -19,11 +19,17 @@ import joblib
 
 def objective(trial, X, y, groups):
     params = {
-        "n_estimators": trial.suggest_int("n_estimators", 200, 1000),
+        # The number of boosting rounds (trees) to build. A higher value can lead to better performance but may also increase the risk of overfitting.
+        "n_estimators": trial.suggest_int("n_estimators", 200, 1000), 
+        # The maximum depth of each tree. Deeper trees can capture more complex patterns but may also overfit the training data.
         "max_depth": trial.suggest_int("max_depth", 3, 10),
+        # The learning rate controls the contribution of each tree to the final prediction. A lower learning rate may lead to better performance but requires more boosting rounds.
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+        # The fraction of data to consider when building each tree. A lower value can help prevent overfitting but may also reduce model performance.
         "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+        # The fraction of features to consider when building each tree. A lower value can help prevent overfitting but may also reduce model performance.
         "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+        # Controls the minimum number of samples required to create a new node in the tree. A higher value can help prevent overfitting but may also reduce model performance.
         "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
         "objective": "reg:squarederror",
         "random_state": 42,
@@ -32,8 +38,10 @@ def objective(trial, X, y, groups):
 
     model = xgb.XGBRegressor(**params)
 
+    # Dataset is split into n=5 groups, samples within the same group are kept together in either the training or test set, and never split. This prevents data leakage and ensures that the model is evaluated on truly unseen data.
     cv = GroupKFold(n_splits=5)
 
+    # Use cross-validation to evaluate the model's performance, better than a single train-test split that would be sensitive to the specific split.
     scores = cross_val_score(
         model,
         X,
@@ -44,12 +52,13 @@ def objective(trial, X, y, groups):
         n_jobs=-1
     )
 
+    # We are trying to find hyperparameters to minimize the mean absolute error across the groups, so we return the negative of the mean score.
     return -np.mean(scores)
 
-def suggest_formulations(model, X_columns, api_profile):
+def suggest_formulations(models, X_columns, api_profile):
     candidates = generate_candidates(X_columns, api_profile)
 
-    preds = model.predict(candidates)
+    preds = predict_ensemble(models, candidates)
 
     candidates["predicted_ee"] = preds
 
@@ -57,7 +66,7 @@ def suggest_formulations(model, X_columns, api_profile):
 
     return top
 
-def formulation_objective(trial, model, X_columns, api_profile=None):
+def formulation_objective(trial, models, X_columns, api_profile=None):
     lipids = get_available_lipids(X_columns)
 
     # velg antall lipider
@@ -73,13 +82,8 @@ def formulation_objective(trial, model, X_columns, api_profile=None):
     if len(set(chosen)) != len(chosen):
         return -1e6
 
-    # fractions for original lipid order
-    weights = np.array([
-        trial.suggest_float(f"w_{i}", 0.01, 1.0)
-        for i in range(len(chosen))
-    ])
-
-    weights = weights / weights.sum()
+    # Generate weights for the chosen lipids 
+    weights = generate_lipid_weights(trial, n_lipids)
 
     # Sort lipids AND weights together
     chosen, weights = sort_lipid_weight_pairs(
@@ -87,7 +91,13 @@ def formulation_objective(trial, model, X_columns, api_profile=None):
         weights
         )
 
-    api_ratio = trial.suggest_float("api_ratio", 0.05, 0.20)
+    # Range for api_to_lipid_ratio: 0.001 to 1.0 (log scale), change if needed
+    api_ratio = trial.suggest_float(
+        "api_ratio",
+        1e-3,
+        1.0,
+        log=True
+    )
 
     row = build_formulation_row(
         X_columns=X_columns,
@@ -98,14 +108,18 @@ def formulation_objective(trial, model, X_columns, api_profile=None):
     )
 
     df = pd.DataFrame([row])
-    pred = model.predict(df)[0]
+    pred = predict_ensemble(models, df)[0]
     #trial.set_user_attr("formulation", row)
 
     penalty = 0.0
 
     # straff hvis én lipid dominerer for mye
-    if max(weights) > 0.9:
-        penalty += 5
+    if max(weights) > 0.95:
+        penalty += 2
+
+    # straff hvis en lipid har for liten andel
+    if min(weights) < 0.05:
+        penalty += 2
 
     trial.set_user_attr(
     "formulation",
@@ -124,6 +138,14 @@ def formulation_objective(trial, model, X_columns, api_profile=None):
     )
 
     return pred - penalty
+
+def predict_ensemble(models, X):
+    predictions = np.array([
+        model.predict(X)
+        for model in models
+    ])
+
+    return predictions.mean(axis=0)
 
 
 def main():
@@ -176,24 +198,48 @@ def main():
     print("Running Bayesian optimization...")
 
     study = optuna.create_study(direction="minimize")
-    study.optimize(lambda trial: objective(trial, X_train, y_train, groups_train), n_trials=50)
+    study.optimize(lambda trial: objective(trial, X_train, y_train, groups_train), n_trials=100)
 
     print("Best parameters:")
     print(study.best_params)
     print()
 
     # ---------- Tren beste modell ----------
-    best_model = xgb.XGBRegressor(
-        **study.best_params,
-        objective="reg:squarederror",
-        random_state=42,
-        n_jobs=-1
-    )
+    # best_model = xgb.XGBRegressor(
+    #     **study.best_params,
+    #     objective="reg:squarederror",
+    #     random_state=42,
+    #     n_jobs=-1
+    # )
 
-    best_model.fit(X_train, y_train)
+    # best_model.fit(X_train, y_train)
+
+    # We can train multiple models with the same best parameters to create an ensemble for more robust predictions.
+    MODEL_DIR = BASE_DIR / "models"
+    MODEL_DIR.mkdir(exist_ok=True)
+    
+    models = []
+
+    for i in range(5):
+
+        model = xgb.XGBRegressor(
+            **study.best_params,
+            objective="reg:squarederror",
+            random_state=42+i,
+            n_jobs=-1
+        )
+
+        model.fit(X_train, y_train)
+
+        models.append(model)
+
+        joblib.dump(
+            model,
+            MODEL_DIR / f"xgb_model_{i}.pkl"
+        )
 
     # ---------- Evaluering ----------
-    y_pred = best_model.predict(X_test)
+    y_pred = predict_ensemble(models, X_test)
 
     mae = mean_absolute_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
@@ -205,13 +251,25 @@ def main():
     print()
 
     # ---------- Feature importance ----------
-    importances = pd.Series(
-        best_model.feature_importances_,
-        index=X.columns
-    ).sort_values(ascending=False)
+    feature_importances = np.array([
+        model.feature_importances_
+        for model in models
+    ])
+
+    mean_importances = feature_importances.mean(axis=0)
+    std_importances = feature_importances.std(axis=0)
+
+    importance_df = pd.DataFrame({
+        "feature": X.columns,
+        "importance": mean_importances,
+        "std": std_importances
+    }).sort_values(
+        "importance",
+        ascending=False
+    )
 
     print("Feature importance:")
-    print(importances.head(20))
+    print(importance_df.head(20))
 
     print("\nTop suggested formulations:")
     # last API properties
@@ -221,7 +279,7 @@ def main():
     API_NAME = "Micrococcin P1"
 
     api_profile = get_api_profile(API_NAME, api_df)
-    top = suggest_formulations(best_model, X.columns, api_profile)
+    top = suggest_formulations(models, X.columns, api_profile)
     print(top.T)
 
     print("\nOptimizing formulations with Bayesian optimization...")
@@ -229,8 +287,8 @@ def main():
     formulation_study = optuna.create_study(direction="maximize")
 
     formulation_study.optimize(
-        lambda trial: formulation_objective(trial, best_model, X.columns, api_profile),
-        n_trials=100
+        lambda trial: formulation_objective(trial, models, X.columns, api_profile),
+        n_trials=500 # Increase this number for more thorough optimization
     )
 
     print("\nBest formulation found:")
@@ -262,24 +320,6 @@ def main():
     )
     print(f"\n✅ Run saved to database: {run_db_path}")
 
-    MODEL_DIR = BASE_DIR / "models"
-    MODEL_DIR.mkdir(exist_ok=True)
-
-    for i in range(5):
-
-        model = xgb.XGBRegressor(
-            **study.best_params,
-            objective="reg:squarederror",
-            random_state=42+i,
-            n_jobs=-1
-        )
-
-        model.fit(X_train, y_train)
-
-        joblib.dump(
-            model,
-            MODEL_DIR / f"xgb_model_{i}.pkl"
-        )
 
 
 if __name__ == "__main__":
