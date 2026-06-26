@@ -5,6 +5,7 @@ from get_api_profile import get_api_profile, load_api_properties
 from formulation_run_db import get_run_db_path, save_run
 from lipid_utils import get_available_lipids
 from formulation_utils import generate_candidates, sort_lipid_weight_pairs, build_formulation_row, generate_lipid_weights
+from experiment_config import ExperimentConfig
 
 from sklearn.model_selection import cross_val_score, GroupKFold
 from train_test_splits import create_split
@@ -15,7 +16,6 @@ import optuna
 import numpy as np
 import pandas as pd
 import joblib
-
 
 def objective(trial, X, y, groups):
     params = {
@@ -55,10 +55,10 @@ def objective(trial, X, y, groups):
     # We are trying to find hyperparameters to minimize the mean absolute error across the groups, so we return the negative of the mean score.
     return -np.mean(scores)
 
-def suggest_formulations(models, X_columns, api_profile):
-    candidates = generate_candidates(X_columns, api_profile)
+def suggest_formulations(config: ExperimentConfig):
+    candidates = generate_candidates(config.X_columns, config.api_profile)
 
-    preds = predict_ensemble(models, candidates)
+    preds = predict_ensemble(config, candidates)
 
     candidates["predicted_ee"] = preds
 
@@ -66,8 +66,8 @@ def suggest_formulations(models, X_columns, api_profile):
 
     return top
 
-def formulation_objective(trial, models, X_columns, api_profile=None):
-    lipids = get_available_lipids(X_columns)
+def formulation_objective(trial, config: ExperimentConfig):
+    lipids = get_available_lipids(config.X_columns)
 
     # velg antall lipider
     n_lipids = trial.suggest_int("n_lipids", 1, 3)
@@ -100,15 +100,15 @@ def formulation_objective(trial, models, X_columns, api_profile=None):
     )
 
     row = build_formulation_row(
-        X_columns=X_columns,
+        X_columns=config.X_columns,
         chosen_lipids=chosen,
         weights=weights,
         api_ratio=api_ratio,
-        api_profile=api_profile
+        api_profile=config.api_profile
     )
 
     df = pd.DataFrame([row])
-    pred = predict_ensemble(models, df)[0]
+    pred = predict_ensemble(config, df)[0]
     #trial.set_user_attr("formulation", row)
 
     penalty = 0.0
@@ -139,10 +139,10 @@ def formulation_objective(trial, models, X_columns, api_profile=None):
 
     return pred - penalty
 
-def predict_ensemble(models, X):
+def predict_ensemble(config: ExperimentConfig, X):
     predictions = np.array([
         model.predict(X)
-        for model in models
+        for model in config.models
     ])
 
     return predictions.mean(axis=0)
@@ -217,7 +217,7 @@ def main():
     # We can train multiple models with the same best parameters to create an ensemble for more robust predictions.
     MODEL_DIR = BASE_DIR / "models"
     MODEL_DIR.mkdir(exist_ok=True)
-    
+
     models = []
 
     for i in range(5):
@@ -237,9 +237,27 @@ def main():
             model,
             MODEL_DIR / f"xgb_model_{i}.pkl"
         )
+    
+    # last API properties
+    api_df = load_api_properties(API_DB_PATH)
+
+    # velg API
+    API_NAME = "Micrococcin P1"
+
+    api_profile = get_api_profile(API_NAME, api_df)
+
+    config = ExperimentConfig(
+            models=models,
+            X_columns=X.columns,
+            api_profile=api_profile,
+            api_name=API_NAME,
+        )
+
+    top = suggest_formulations(config)
+    print(top.T)
 
     # ---------- Evaluering ----------
-    y_pred = predict_ensemble(models, X_test)
+    y_pred = predict_ensemble(config, X_test)
 
     mae = mean_absolute_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
@@ -253,14 +271,14 @@ def main():
     # ---------- Feature importance ----------
     feature_importances = np.array([
         model.feature_importances_
-        for model in models
+        for model in config.models
     ])
 
     mean_importances = feature_importances.mean(axis=0)
     std_importances = feature_importances.std(axis=0)
 
     importance_df = pd.DataFrame({
-        "feature": X.columns,
+        "feature": config.X_columns,
         "importance": mean_importances,
         "std": std_importances
     }).sort_values(
@@ -272,22 +290,13 @@ def main():
     print(importance_df.head(20))
 
     print("\nTop suggested formulations:")
-    # last API properties
-    api_df = load_api_properties(API_DB_PATH)
-
-    # velg API
-    API_NAME = "Micrococcin P1"
-
-    api_profile = get_api_profile(API_NAME, api_df)
-    top = suggest_formulations(models, X.columns, api_profile)
-    print(top.T)
 
     print("\nOptimizing formulations with Bayesian optimization...")
 
     formulation_study = optuna.create_study(direction="maximize")
 
     formulation_study.optimize(
-        lambda trial: formulation_objective(trial, models, X.columns, api_profile),
+        lambda trial: formulation_objective(trial, config),
         n_trials=500 # Increase this number for more thorough optimization
     )
 
@@ -307,7 +316,7 @@ def main():
 
     save_run(
         run_db_path,
-        API_NAME,
+        config.api_name,
         comment,
         float(formulation_study.best_value),
         best_formulation,
