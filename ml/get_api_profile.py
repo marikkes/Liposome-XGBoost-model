@@ -24,7 +24,7 @@ def preprocess_api_profile(api_profile, X_reference):
 
     api_profile = api_profile.copy()
 
-    for key in api_profile:
+    for key in list(api_profile.keys()):
 
         if key.endswith("_missing"):
             continue
@@ -32,10 +32,11 @@ def preprocess_api_profile(api_profile, X_reference):
         if pd.isna(api_profile[key]):
 
             missing_key = key + "_missing"
-
             api_profile[missing_key] = 1
 
             if key in X_reference.columns:
-                api_profile[key] = X_reference[key].median()
+                api_profile[key] = float(X_reference[key].median())
+            else:
+                raise KeyError(f"API profile key '{key}' not found in reference feature set")
 
     return api_profile

@@ -45,7 +45,7 @@ def normalize(x):
 # -----------------------------
 # Acquisition function
 # -----------------------------
-def acquisition(mean_norm, std_norm, novelty_norm, beta, gamma):
+def acquisition(mean, std, novelty, beta, gamma):
     """
     Calculate acquisition score for selecting next experiments.
 
@@ -57,9 +57,9 @@ def acquisition(mean_norm, std_norm, novelty_norm, beta, gamma):
         gamma (float): Weight for the novelty term.
     """
 
-    mean_norm = normalize(mean_norm)
-    std_norm = normalize(std_norm)
-    novelty_norm = normalize(novelty_norm)
+    mean_norm = normalize(mean)
+    std_norm = normalize(std)
+    novelty_norm = normalize(novelty)
 
     return (
         mean_norm
@@ -208,9 +208,6 @@ def main():
 
     X, _, _ = make_dataset(DB_PATH, API_DB_PATH, LIPID_DB_PATH)
     api_profile = preprocess_api_profile(api_profile, X)
-    print("TEST TEST")
-    print(X.isna().sum().sort_values(ascending=False).head(100))
-    print(X.columns)
 
     config = ExperimentConfig(
         models=[],

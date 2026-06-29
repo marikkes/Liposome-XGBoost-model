@@ -140,6 +140,9 @@ def formulation_objective(trial, config: ExperimentConfig):
     return pred - penalty
 
 def predict_ensemble(config: ExperimentConfig, X):
+    if not config.models:
+         raise ValueError("ExperimentConfig.models is empty; load/train models before calling predict_ensemble().")
+    
     predictions = np.array([
         model.predict(X)
         for model in config.models
@@ -297,7 +300,7 @@ def main():
 
     formulation_study.optimize(
         lambda trial: formulation_objective(trial, config),
-        n_trials=500 # Increase this number for more thorough optimization
+        n_trials=config.n_formulation_trials
     )
 
     print("\nBest formulation found:")

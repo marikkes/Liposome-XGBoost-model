@@ -12,19 +12,18 @@ class ExperimentConfig:
 
     n_models: int = 5
 
-    """
-    mode:
-        - exploitation: prioritize high predicted EE
-        - balanced: balance predicted EE and uncertainty
-        - exploration: balance predicted EE, uncertainty, and novelty
-    """
+    # mode:
+    #     - exploitation: prioritize high predicted EE
+    #     - balanced: balance predicted EE and uncertainty
+    #     - exploration: balance predicted EE, uncertainty, and novelty
+    
     acquisition_mode: str = "balanced"
 
     beta: float = None
     gamma: float = None
 
     n_candidates: int = 5000
-    n_formulation_trials: int = 500
+    n_formulation_trials: int = 500 # Increase this number for more thorough optimization
     n_suggestions: int = 5
 
     def __post_init__(self):
