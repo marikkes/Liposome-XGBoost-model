@@ -50,8 +50,6 @@ def generate_candidates(X_columns, api_profile, n_samples=5000):
 def build_formulation_row(X_columns, chosen_lipids, weights, api_ratio, api_profile=None):
     row = dict.fromkeys(X_columns, 0.0)
 
-    chosen_lipids = sort_lipids(chosen_lipids)
-
     for lipid, w in zip(chosen_lipids, weights):
         row[lipid] = float(w)
 
@@ -64,3 +62,46 @@ def build_formulation_row(X_columns, chosen_lipids, weights, api_ratio, api_prof
                 row[key] = value
 
     return row
+
+# Add stronger constraints here if needed, e.g., minimum lipid fraction 0.05 etc. For now, we just ensure that the weights sum to 1.
+def generate_lipid_weights(trial, n_lipids):
+    """
+    Generate lipid fractions using stick-breaking.
+    Returns weights that sum to 1.
+    """
+
+    if n_lipids == 1:
+        return np.array([1.0])
+
+    elif n_lipids == 2:
+        u1 = trial.suggest_float(
+            "u1",
+            0.05,
+            0.95
+        )
+
+        return np.array([
+            u1,
+            1 - u1
+        ])
+
+    elif n_lipids == 3:
+        u1 = trial.suggest_float(
+            "u1",
+            0.05,
+            0.95
+        )
+
+        u2 = trial.suggest_float(
+            "u2",
+            0.05,
+            0.95
+        )
+
+        return np.array([
+            u1,
+            (1-u1)*u2,
+            (1-u1)*(1-u2)
+        ])
+    else:
+        raise ValueError("Only 1-3 lipids supported")

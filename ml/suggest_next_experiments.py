@@ -5,19 +5,21 @@ import joblib
 from sklearn.metrics import pairwise_distances
 from sklearn.preprocessing import StandardScaler
 
-from get_api_profile import load_api_properties, get_api_profile
+from get_api_profile import load_api_properties, get_api_profile, preprocess_api_profile
 from make_dataset import make_dataset
-from lipid_utils import get_lipid_type_fraction_columns, sort_lipids, build_formulation_row, extract_present_lipids, lipid_name_from_column
+from lipid_utils import get_lipid_type_fraction_columns, sort_lipids, extract_present_lipids, lipid_name_from_column
 from formulation_utils import generate_candidates
+from experiment_config import ExperimentConfig
 
 
-def compute_novelty(candidates, X_train):
+def compute_novelty(candidates, X_existing):
 
-    # Fill NaNs ONLY for distance calculation
+    # Missing values are only replaced for distance calculation.
+    # Model input remains unchanged.
     candidates_filled = candidates.fillna(0)
-    X_train_filled = X_train.fillna(0)
+    X_existing_filled = X_existing.fillna(0)
     
-    distances = pairwise_distances(candidates_filled, X_train_filled)
+    distances = pairwise_distances(candidates_filled, X_existing_filled)
     min_dist = distances.min(axis=1)  # nærmeste nabo
 
     return min_dist
@@ -43,8 +45,27 @@ def normalize(x):
 # -----------------------------
 # Acquisition function
 # -----------------------------
-def acquisition(mean, std, novelty, beta=1.5, gamma=0.5):
-    return normalize(mean) + beta * normalize(std) + gamma * normalize(novelty)
+def acquisition(mean, std, novelty, beta, gamma):
+    """
+    Calculate acquisition score for selecting next experiments.
+
+    Parameters:
+        mean (np.ndarray): Predicted mean values from the ensemble models.
+        std (np.ndarray): Predicted standard deviation values from the ensemble models.
+        novelty (np.ndarray): Novelty scores for the candidates.
+        beta (float): Weight for the uncertainty term.
+        gamma (float): Weight for the novelty term.
+    """
+
+    mean_norm = normalize(mean)
+    std_norm = normalize(std)
+    novelty_norm = normalize(novelty)
+
+    return (
+        mean_norm
+        + beta * std_norm
+        + gamma * novelty_norm
+    )
 #Want to obtain max EE and max uncertainty and difference from previous results
 
 # -----------------------------
@@ -118,21 +139,20 @@ def select_diverse_top(df, n_select=10, random_state=42):
 # -----------------------------
 # Suggest experiments
 # -----------------------------
-def suggest_next(models, X_train, X_columns, api_profile, n_suggestions=5, n_candidates=5000):
+def suggest_next(config: ExperimentConfig, X_existing):
+    candidates = generate_candidates(config.X_columns, config.api_profile, config.n_candidates)
 
-    candidates = generate_candidates(X_columns, api_profile, n_candidates)
+    mean, std = predict_with_uncertainty(config.models, candidates)
 
-    mean, std = predict_with_uncertainty(models, candidates)
-
-    novelty = compute_novelty(candidates, X_train)
+    novelty = compute_novelty(candidates, X_existing)
 
     candidates["mean_ee"] = mean
     candidates["uncertainty"] = std
     candidates["novelty"] = novelty
 
-    candidates["score"] = acquisition(mean, std, novelty)
+    candidates["score"] = acquisition(mean, std, novelty, beta=config.beta, gamma=config.gamma)
 
-    top = select_diverse_top(candidates, n_suggestions)
+    top = select_diverse_top(candidates, config.n_suggestions)
 
     return top
 
@@ -186,16 +206,23 @@ def main():
     api_df = load_api_properties(BASE_DIR / "db" / "work" / "api_properties.db")
     api_profile = get_api_profile("Micrococcin P1", api_df)
 
-    X, y = make_dataset(DB_PATH, API_DB_PATH, LIPID_DB_PATH)
-    print("TEST TEST")
-    print(X.isna().sum().sort_values(ascending=False).head(100))
-    print(X.columns)
+    X, _, _ = make_dataset(DB_PATH, API_DB_PATH, LIPID_DB_PATH)
+    api_profile = preprocess_api_profile(api_profile, X)
+
+    config = ExperimentConfig(
+        models=[],
+        X_columns=X.columns,
+        api_profile=api_profile,
+        api_name="Micrococcin P1",
+        acquisition_mode="exploration",
+    )
 
     print("Loading models...")
-    models = load_models(MODEL_DIR, n_models=5)
+    config.models = load_models(MODEL_DIR, config.n_models)
 
     print("Generating next experiments...")
-    top = suggest_next(models, X, X.columns, api_profile)
+    # Change mode here to "exploitation" if you want to prioritize high predicted EE
+    top = suggest_next(config, X)
 
     print("\nTop next experiments:")
     formatted = format_formulations(top)
