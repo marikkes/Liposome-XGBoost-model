@@ -59,23 +59,6 @@ def sort_lipids(chosen_lipids):
 
     return sorted(chosen_lipids, key=priority)
 
-def build_formulation_row(X_columns, chosen_lipids, weights, api_ratio, api_profile):
-    row = dict.fromkeys(X_columns, 0)
-
-    chosen_lipids = sort_lipids(chosen_lipids)
-
-    for lipid, w in zip(chosen_lipids, weights):
-        row[lipid] = w
-
-    row["n_lipids"] = len(chosen_lipids)
-    row["api_to_lipid_ratio"] = api_ratio
-
-    for key, value in api_profile.items():
-        if key in row:
-            row[key] = value
-
-    return row
-
 def extract_present_lipids(row, lipid_cols, threshold=0.01):
     """
     Returns dict: {lipid_column: value}

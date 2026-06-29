@@ -16,6 +16,7 @@ import optuna
 import numpy as np
 import pandas as pd
 import joblib
+import os
 
 def objective(trial, X, y, groups):
     params = {
@@ -314,8 +315,9 @@ def main():
     run_db_path = get_run_db_path(BASE_DIR)
 
     comment = input("Describe the changes from the previous run:\n> ").strip()
+
     if not comment:
-        raise RuntimeError("A comment is required to save this run.")
+            raise RuntimeError("A comment is required to save this run.")
 
     save_run(
         run_db_path,
@@ -330,6 +332,7 @@ def main():
         float(mae),
         float(r2),
     )
+
     print(f"\n✅ Run saved to database: {run_db_path}")
 
 
