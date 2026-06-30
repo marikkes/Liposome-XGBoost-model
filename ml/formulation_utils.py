@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from lipid_utils import get_available_lipids, sort_lipids, build_formulation_row
+from lipid_utils import get_available_lipids, sort_lipids
 
 def normalize_weights(weights):
     weights = np.array(weights, dtype=float)
