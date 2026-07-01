@@ -15,11 +15,17 @@ from experiment_config import ExperimentConfig
 def compute_novelty(candidates, X_existing):
 
     # Missing values are only replaced for distance calculation.
+    # Features are standardized (fit on existing data) before computing distances.
     # Model input remains unchanged.
     candidates_filled = candidates.fillna(0)
     X_existing_filled = X_existing.fillna(0)
+
+    scaler = StandardScaler().fit(X_existing_filled)
+
+    X_existing_scaled = scaler.transform(X_existing_filled)
+    candidates_scaled = scaler.transform(candidates_filled)
     
-    distances = pairwise_distances(candidates_filled, X_existing_filled)
+    distances = pairwise_distances(candidates_scaled, X_existing_scaled)
     min_dist = distances.min(axis=1)  # nærmeste nabo
 
     return min_dist
