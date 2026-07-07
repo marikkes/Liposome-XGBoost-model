@@ -1,12 +1,18 @@
 from dataclasses import dataclass
+
+from pathlib import Path
+from classes.pca_model import PCAModel
 import pandas as pd
+
+from get_api_profile import get_api_profile, load_api_properties
 
 @dataclass
 class ExperimentConfig:
     models: list
     X_columns: pd.Index
-    api_profile: dict
-    api_name: str
+    api_db_path: Path
+    api_name: str = "Sirolimus" #Change this to the API you want to optimize for
+    api_profile: dict = None
 
     split_mode: str = "within_api"
 
@@ -19,6 +25,10 @@ class ExperimentConfig:
     
     acquisition_mode: str = "balanced"
 
+    lipid_selection_mode: str = "PCA"  # or "RANDOM"
+    pca_model: PCAModel = None
+    n_pca_components: int = 3
+
     beta: float = None
     gamma: float = None
 
@@ -27,6 +37,30 @@ class ExperimentConfig:
     n_suggestions: int = 5
 
     def __post_init__(self):
+
+        # -----------------------
+        # Load API profile
+        # -----------------------
+
+        if self.api_profile is None:
+
+            if self.api_db_path is None:
+                raise ValueError(
+                    "api_db_path must be provided when api_profile is not supplied"
+                )
+
+            api_df = load_api_properties(
+                self.api_db_path
+            )
+
+            self.api_profile = get_api_profile(
+                self.api_name,
+                api_df
+            )
+
+        # -----------------------
+        # Acquisition settings
+        # -----------------------
 
         settings = {
             "exploitation": (0.2, 0.1),

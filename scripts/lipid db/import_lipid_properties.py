@@ -22,6 +22,7 @@ def clean_numeric(series):
 def main():
     # ---------- Les Excel ----------
     df = pd.read_excel(EXCEL_PATH)
+    df = df.dropna(how="all")
 
     # ---------- Rename kolonner (match DB!) ----------
     df = df.rename(columns={
@@ -40,16 +41,17 @@ def main():
         "Tail length max": "tail_length_max",
         "Average double bonds per tail": "avg_double_bonds_per_tail",
         "Is mixture": "is_mixture",
-        "Has tails": "has_tails",
         "Is zwitterionic": "is_zwitterionic",
         "Is cationic": "is_cationic",
         "Is anionic": "is_anionic"
     })
 
+    df = df[df["lipid_name"].notna()]
+    df = df[df["molecular_weight"].notna()]
+
     # Converting lipid class into boolean features
     df["is_phospholipid"] = (df["lipid_class"] == "Phospholipid").astype(int)
     df["is_sterol"] = (df["lipid_class"] == "Sterol").astype(int)
-    df["is_cationic_lipid"] = (df["lipid_class"] == "Cationic lipid").astype(int)
     # Add more classes here if needed!
 
     # Drop original lipid class text column and full name

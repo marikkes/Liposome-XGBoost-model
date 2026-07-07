@@ -5,11 +5,11 @@ import joblib
 from sklearn.metrics import pairwise_distances
 from sklearn.preprocessing import StandardScaler
 
-from get_api_profile import load_api_properties, get_api_profile, preprocess_api_profile
+from get_api_profile import preprocess_api_profile
 from make_dataset import make_dataset
 from lipid_utils import get_lipid_type_fraction_columns, sort_lipids, extract_present_lipids, lipid_name_from_column
-from formulation_utils import generate_candidates
-from experiment_config import ExperimentConfig
+from formulation_utils import generate_candidates, load_pca_model
+from classes.experiment_config import ExperimentConfig
 
 
 def compute_novelty(candidates, X_existing):
@@ -146,7 +146,7 @@ def select_diverse_top(df, n_select=10, random_state=42):
 # Suggest experiments
 # -----------------------------
 def suggest_next(config: ExperimentConfig, X_existing):
-    candidates = generate_candidates(config.X_columns, config.api_profile, config.n_candidates)
+    candidates = generate_candidates(config)
 
     mean, std = predict_with_uncertainty(config.models, candidates)
 
@@ -209,19 +209,19 @@ def main():
     LIPID_DB_PATH = BASE_DIR / "db" / "work" / "lipid_properties.db"
     MODEL_DIR = BASE_DIR / "models"
 
-    api_df = load_api_properties(BASE_DIR / "db" / "work" / "api_properties.db")
-    api_profile = get_api_profile("Micrococcin P1", api_df)
-
     X, _, _ = make_dataset(DB_PATH, API_DB_PATH, LIPID_DB_PATH)
-    api_profile = preprocess_api_profile(api_profile, X)
 
     config = ExperimentConfig(
         models=[],
         X_columns=X.columns,
-        api_profile=api_profile,
-        api_name="Micrococcin P1",
+        api_db_path=API_DB_PATH,
         acquisition_mode="exploration",
     )
+
+    config.api_profile = preprocess_api_profile(config.api_profile, X)
+
+    if config.lipid_selection_mode == "PCA":
+        config.pca_model = load_pca_model(config.n_pca_components)
 
     print("Loading models...")
     config.models = load_models(MODEL_DIR, config.n_models)

@@ -17,7 +17,6 @@ def create_database():
                    
         is_phospholipid INTEGER,
         is_sterol INTEGER,
-        is_cationic_lipid INTEGER,
 
         molecular_weight REAL,
         rotatable_bond_count INTEGER,
@@ -35,7 +34,6 @@ def create_database():
         tail_length_max INTEGER,
         avg_double_bonds_per_tail REAL,
         is_mixture  INTEGER,
-        has_tails INTEGER,
         is_zwitterionic INTEGER,
         is_cationic INTEGER,
         is_anionic INTEGER                      
