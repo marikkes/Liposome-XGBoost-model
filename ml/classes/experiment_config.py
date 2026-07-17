@@ -11,7 +11,7 @@ class ExperimentConfig:
     models: list
     X_columns: pd.Index
     api_db_path: Path
-    api_name: str = "Sirolimus" #Change this to the API you want to optimize for
+    api_name: str = "Micrococcin P1" #Change this to the API you want to optimize for
     api_profile: dict = None
 
     split_mode: str = "within_api"
