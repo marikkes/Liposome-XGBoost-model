@@ -40,11 +40,11 @@ def get_smiles_from_pubchem(api_name):
             compounds = pcp.get_compounds(
                 name,
                 "name"
-        )
+            )
 
             if compounds:
-                    print(f"  ✓ Found using '{name}'")
-                    return compounds[0].smiles
+                print(f"  ✓ Found using '{name}'")
+                return compounds[0].smiles
 
         except Exception:
             continue

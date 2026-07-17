@@ -89,20 +89,6 @@ def import_backup_properties():
             conn
         )
 
-        print("\nDatabase Granulocyte entry:")
-        db_gran = db[
-            db["api"].str.contains(
-                "Granulocyte",
-                case=False,
-                na=False
-            )
-        ]["api"]
-
-        for name in db_gran:
-            print(repr(name))
-            print([ord(c) for c in name])
-
-
         # Only APIs missing SMILES
         missing = db[
             db["smiles"].isna()

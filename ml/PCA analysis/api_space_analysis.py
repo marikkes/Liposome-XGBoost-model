@@ -51,7 +51,7 @@ def main():
         "complexity",
         "defined_atom_stereocenter_count",
         "defined_bond_stereocenter_count",
-        "number_of_rings_calc"
+        "number_of_rings"
     ]
 
 

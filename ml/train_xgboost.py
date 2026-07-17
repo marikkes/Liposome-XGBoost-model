@@ -9,7 +9,6 @@ from classes.experiment_config import ExperimentConfig
 from sklearn.model_selection import cross_val_score, GroupKFold
 from train_test_splits import create_split
 from sklearn.metrics import mean_absolute_error, r2_score
-from optuna.visualization.matplotlib import plot_optimization_history
 
 import xgboost as xgb
 import optuna
@@ -410,7 +409,12 @@ def main():
     plt.ylabel("Best predicted EE so far")
     plt.title("Optuna convergence")
 
-    plt.show()
+    plt.savefig(
+         MODEL_DIR / "optuna_convergence.png",
+         dpi=300,
+         bbox_inches="tight"
+     )
+    plt.close()
     #------------------------------
 
     print("\nPredicted EE:")
