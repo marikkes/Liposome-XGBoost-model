@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 import suggest_next_experiments as sne
-from experiment_config import ExperimentConfig
+from classes.experiment_config import ExperimentConfig
 
 
 class DummyModel:
@@ -28,6 +28,7 @@ def test_suggest_next_adds_scoring_columns(monkeypatch):
     config = ExperimentConfig(
         models=[DummyModel(0.0)],
         X_columns=X_columns,
+        api_db_path=None,
         api_profile={"api_molecular_weight": 1000.0},
         api_name="api",
         n_candidates=3,

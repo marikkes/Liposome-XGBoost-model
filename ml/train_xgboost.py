@@ -1,11 +1,10 @@
 from pathlib import Path
 
 from make_dataset import make_dataset
-from get_api_profile import get_api_profile, load_api_properties
 from formulation_run_db import get_run_db_path, save_run
-from lipid_utils import get_available_lipids
-from formulation_utils import generate_candidates, sort_lipid_weight_pairs, build_formulation_row, generate_lipid_weights
-from experiment_config import ExperimentConfig
+from lipid_utils import get_available_lipids, lipid_name_from_column
+from formulation_utils import choose_lipid_from_pca_trial, generate_candidates, sort_lipid_weight_pairs, build_formulation_row, generate_lipid_weights, load_pca_model
+from classes.experiment_config import ExperimentConfig
 
 from sklearn.model_selection import cross_val_score, GroupKFold
 from train_test_splits import create_split
@@ -16,7 +15,7 @@ import optuna
 import numpy as np
 import pandas as pd
 import joblib
-import os
+import matplotlib.pyplot as plt
 
 def objective(trial, X, y, groups):
     params = {
@@ -57,7 +56,7 @@ def objective(trial, X, y, groups):
     return -np.mean(scores)
 
 def suggest_formulations(config: ExperimentConfig):
-    candidates = generate_candidates(config.X_columns, config.api_profile)
+    candidates = generate_candidates(config)
 
     preds = predict_ensemble(config, candidates)
 
@@ -68,16 +67,36 @@ def suggest_formulations(config: ExperimentConfig):
     return top
 
 def formulation_objective(trial, config: ExperimentConfig):
-    lipids = get_available_lipids(config.X_columns)
-
     # velg antall lipider
-    n_lipids = trial.suggest_int("n_lipids", 1, 3)
+    n_lipids = trial.suggest_categorical("n_lipids", [1, 2, 3])
 
     # optuna velger lipider
-    chosen = [
-        trial.suggest_categorical(f"lipid_{i}", lipids)
-        for i in range(n_lipids)
-    ]
+    if config.lipid_selection_mode == "PCA":
+        chosen = [
+            choose_lipid_from_pca_trial(
+                trial,
+                i,
+                config
+            )
+            for i in range(n_lipids)
+        ]
+    
+    elif config.lipid_selection_mode == "RANDOM":
+        lipid_columns = get_available_lipids(config.X_columns)
+
+        lipids = [
+            lipid_name_from_column(col)
+            for col in lipid_columns
+        ]
+    
+        chosen = [
+            trial.suggest_categorical(f"lipid_{i}", lipids)
+            for i in range(n_lipids)
+        ]
+    else:
+        raise ValueError(
+            "Unknown lipid selection mode"
+        )
 
     # Reject duplicates
     if len(set(chosen)) != len(chosen):
@@ -241,21 +260,15 @@ def main():
             model,
             MODEL_DIR / f"xgb_model_{i}.pkl"
         )
-    
-    # last API properties
-    api_df = load_api_properties(API_DB_PATH)
-
-    # velg API
-    API_NAME = "Micrococcin P1"
-
-    api_profile = get_api_profile(API_NAME, api_df)
 
     config = ExperimentConfig(
             models=models,
             X_columns=X.columns,
-            api_profile=api_profile,
-            api_name=API_NAME,
+            api_db_path=API_DB_PATH
         )
+    
+    if config.lipid_selection_mode == "PCA":
+        config.pca_model = load_pca_model(config.n_pca_components)
 
     top = suggest_formulations(config)
     print(top.T)
@@ -308,6 +321,101 @@ def main():
     print(formulation_study.best_params)
     best_formulation = formulation_study.best_trial.user_attrs["formulation"]
     print(best_formulation)
+
+    #Optimization history plot
+    #------------------------------
+    trials_df = formulation_study.trials_dataframe()
+    print(trials_df.head())
+
+    # DEBUGGING PLOTS, REMOVE WHEN NOT NEEDED
+
+    # plot_optimization_history(formulation_study)
+
+    # trial_data = []
+
+    # for trial in formulation_study.trials:
+    #     if "formulation" in trial.user_attrs:
+    #         row = trial.user_attrs["formulation"].copy()
+
+    #         row["trial"] = trial.number
+    #         row["value"] = trial.value
+
+    #     trial_data.append(row)
+
+    # trial_df = pd.DataFrame(trial_data)
+
+    # print(
+    #     trial_df["lipid_0"].value_counts()
+    # )
+
+    # print(
+    #     trial_df["lipid_1"].value_counts()
+    # )
+
+    # print("Top suggested formulations:")
+    # top_trials = (
+    #     trial_df
+    #     .sort_values("value", ascending=False)
+    #     .head(20)
+    # )
+
+    # print(top_trials)
+
+    values = [
+        t.value
+        for t in formulation_study.trials
+        if t.value > 0
+    ]
+
+    # plt.figure(figsize=(8,5))
+    # plt.plot(values)
+    # plt.xlabel("Valid trial")
+    # plt.ylabel("Predicted EE")
+    # plt.title("Optuna convergence")
+    # plt.show()
+
+    # plt.figure(figsize=(8,5))
+    # plt.scatter(
+    #     X["api_to_lipid_ratio"],
+    #     y
+    # )
+
+    # plt.xlabel("API/lipid ratio")
+    # plt.ylabel("EE%")
+    # plt.title("Training data: API ratio vs EE")
+    # plt.show()
+
+    trials_df = formulation_study.trials_dataframe()
+
+    print(
+        trials_df["params_n_lipids"].value_counts()
+    )
+
+
+    best_so_far = []
+
+    current_best = -np.inf
+
+    for value in values:
+        current_best = max(current_best, value)
+        best_so_far.append(current_best)
+
+
+    plt.figure(figsize=(8,5))
+
+    plt.plot(best_so_far)
+
+    plt.xlabel("Valid trial")
+    plt.ylabel("Best predicted EE so far")
+    plt.title("Optuna convergence")
+
+    plt.savefig(
+         MODEL_DIR / "optuna_convergence.png",
+         dpi=300,
+         bbox_inches="tight"
+     )
+    plt.close()
+    #------------------------------
 
     print("\nPredicted EE:")
     print(formulation_study.best_value)
