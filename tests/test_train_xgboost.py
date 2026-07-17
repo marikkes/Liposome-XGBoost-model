@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 import train_xgboost as txgb
-from experiment_config import ExperimentConfig
+from classes.experiment_config import ExperimentConfig
 
 
 class DummyModel:
@@ -37,6 +37,7 @@ def test_predict_ensemble_raises_for_empty_models():
     config = ExperimentConfig(
         models=[],
         X_columns=pd.Index(["a"]),
+        api_db_path=None,
         api_profile={},
         api_name="api",
     )
@@ -49,6 +50,7 @@ def test_predict_ensemble_returns_mean_prediction():
     config = ExperimentConfig(
         models=[DummyModel(0.2), DummyModel(0.8)],
         X_columns=pd.Index(["a"]),
+        api_db_path=None,
         api_profile={},
         api_name="api",
     )
@@ -67,6 +69,7 @@ def test_formulation_objective_applies_penalty(monkeypatch):
             "lipid_DPPC_fraction",
             "lipid_DOPE_fraction",
         ]),
+        api_db_path=None,
         api_profile={"api_molecular_weight": 1000.0},
         api_name="api",
     )
@@ -76,6 +79,13 @@ def test_formulation_objective_applies_penalty(monkeypatch):
         "lipid_DPPC_fraction",
         "lipid_DOPE_fraction",
     ])
+    
+    lipid_selection_index = [0]
+    def mock_choose_lipid(*args):
+        lipid_selection_index[0] += 1
+        return "lipid_DPPC_fraction" if lipid_selection_index[0] % 2 == 0 else "lipid_DOPE_fraction"
+    
+    monkeypatch.setattr(txgb, "choose_lipid_from_pca_trial", mock_choose_lipid)
     monkeypatch.setattr(txgb, "generate_lipid_weights", lambda _trial, _n: [0.96, 0.04])
     monkeypatch.setattr(txgb, "sort_lipid_weight_pairs", lambda chosen, weights: (chosen, weights))
     monkeypatch.setattr(txgb, "build_formulation_row", lambda **kwargs: {
