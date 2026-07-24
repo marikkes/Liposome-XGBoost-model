@@ -2,7 +2,7 @@ from pathlib import Path
 import sqlite3
 import pandas as pd
 
-from fetch_smiles import fetch_smiles
+from fetch_smiles import fetch_api_smiles
 from calculate_api_descriptors import calculate_api_descriptors
 from import_backup_properties import import_backup_properties
 from utils import normalize_api_name
@@ -90,7 +90,7 @@ def main():
 
 
     print("\nFetching SMILES from PubChem...")
-    fetch_smiles()
+    fetch_api_smiles()
 
 
     print("\nCalculating RDKit descriptors...")
