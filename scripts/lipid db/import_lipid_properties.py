@@ -2,6 +2,8 @@ from pathlib import Path
 import pandas as pd
 import sqlite3
 
+#NOT IN USE
+
 # ---------- Paths ----------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "db" / "work" / "lipid_properties.db"

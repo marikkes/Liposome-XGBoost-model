@@ -18,7 +18,7 @@ DB_PATH = (
     BASE_DIR
     / "db"
     / "work"
-    / "api_properties.db"
+    / "lipid_properties.db"
 )
 
 def calculate_descriptors(smiles):
@@ -71,14 +71,12 @@ def calculate_descriptors(smiles):
         "labute_surface_area": rdMolDescriptors.CalcLabuteASA(mol),
     }
 
-
-
 def add_column_if_missing(conn, column_name):
 
     cursor = conn.cursor()
 
     cursor.execute(
-        "PRAGMA table_info(api_properties)"
+        "PRAGMA table_info(lipid_properties)"
     )
 
     columns = [
@@ -90,7 +88,7 @@ def add_column_if_missing(conn, column_name):
 
         cursor.execute(
             f"""
-            ALTER TABLE api_properties
+            ALTER TABLE lipid_properties
             ADD COLUMN {column_name} REAL
             """
         )
@@ -99,12 +97,12 @@ def add_column_if_missing(conn, column_name):
 
 
 
-def calculate_api_descriptors():
+def calculate_lipid_descriptors():
 
     with sqlite3.connect(DB_PATH) as conn:
 
         df = pd.read_sql(
-            "SELECT * FROM api_properties",
+            "SELECT * FROM lipid_properties",
             conn
         )
 
@@ -154,15 +152,15 @@ def calculate_api_descriptors():
         )
 
         update_sql = f"""
-            UPDATE api_properties
+            UPDATE lipid_properties
             SET {", ".join(f"{col} = ?" for col in calc_columns)}
-            WHERE api = ?
+            WHERE lipid_name = ?
         """
 
         for _, row in df.iterrows():
 
             values = [row[col] for col in calc_columns]
-            values.append(row["api"])
+            values.append(row["lipid_name"])
 
             conn.execute(
                 update_sql,
