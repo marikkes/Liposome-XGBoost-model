@@ -53,12 +53,15 @@ def main():
         "defined_bond_stereocenter_count",
         "number_of_rings",
         "aromatic_ring_count",
+        "aliphatic_ring_count",
         "saturated_ring_count",
         "fraction_csp3",
         "heteroatom_count",
         "formal_charge",
         "atom_count",
-        "amide_bond_count"
+        "amide_bond_count",
+        "molar_refractivity",
+        "labute_surface_area"
     ]
 
 
