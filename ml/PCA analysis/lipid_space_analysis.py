@@ -35,10 +35,9 @@ def main():
     # Select descriptors
     # -----------------------
 
-    descriptor_cols = [
-        c for c in lipids.columns
-        if c != "lipid_name"
-    ]
+    descriptor_cols = lipids.select_dtypes(
+        include="number"
+    ).columns.tolist()
 
     X = lipids[descriptor_cols]
 
@@ -120,7 +119,7 @@ def main():
     print(f"\nPCA results saved to:\n{output_file}")
 
     # -----------------------
-    # Plot
+    # Plot: PC1 vs PC2
     # -----------------------
 
     plt.figure(figsize=(8,6))
@@ -137,16 +136,80 @@ def main():
             lipid
         )
 
-    plt.xlabel("PC1")
-    plt.ylabel("PC2")
+    plt.xlabel(
+        f"PC1 ({variance[0]:.1%})"
+    )
+
+    plt.ylabel(
+        f"PC2 ({variance[1]:.1%})"
+    )
+
     plt.title(
-        "Lipid chemical space"
+        "Lipid chemical space (PC1 vs PC2)"
     )
     
     plot_file = BASE_DIR / "lipid_pca_plot.png"
 
     plt.savefig(plot_file, dpi=300, bbox_inches="tight")
     print(f"PCA plot saved to:\n{plot_file}")
+
+    plt.show()
+
+
+    # -----------------------
+    # Plot: PC1 vs PC2 vs PC3
+    # -----------------------
+
+    fig = plt.figure(figsize=(10, 8))
+
+    ax = fig.add_subplot(
+        111,
+        projection="3d"
+    )
+
+    ax.scatter(
+        X_pca[:, 0],
+        X_pca[:, 1],
+        X_pca[:, 2]
+    )
+
+    for i, lipid in enumerate(lipids["lipid_name"]):
+
+        ax.text(
+            X_pca[i, 0],
+            X_pca[i, 1],
+            X_pca[i, 2],
+            lipid,
+            fontsize=7
+        )
+
+    ax.set_xlabel(
+        f"PC1 ({variance[0]:.1%})"
+    )
+
+    ax.set_ylabel(
+        f"PC2 ({variance[1]:.1%})"
+    )
+
+    ax.set_zlabel(
+        f"PC3 ({variance[2]:.1%})"
+    )
+
+    ax.set_title(
+        "Lipid chemical space (PC1–PC3)"
+    )
+
+    plot_3d_file = BASE_DIR / "lipid_pca_plot_3d.png"
+
+    plt.savefig(
+        plot_3d_file,
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    print(
+        f"3D PCA plot saved to:\n{plot_3d_file}"
+    )
 
     plt.show()
 

@@ -11,14 +11,18 @@ class ExperimentConfig:
     models: list
     X_columns: pd.Index
     api_db_path: Path
-    api_name: str = "Micrococcin P1" #Change this to the API you want to optimize for
+    api_name: str = "Azithromycin dihydrate" #Change this to the API you want to optimize for
     api_profile: dict = None
 
+    # split_mode:
+    #     - within_api: split data within the same API, each API is split into train and test sets
+    #     - api: split data across different APIs, whole APIs are either in train or test set
+    #     - random: random split of the entire dataset
     split_mode: str = "within_api"
 
     n_models: int = 5
 
-    # mode:
+    # acquisition_mode:
     #     - exploitation: prioritize high predicted EE
     #     - balanced: balance predicted EE and uncertainty
     #     - exploration: balance predicted EE, uncertainty, and novelty
@@ -33,7 +37,7 @@ class ExperimentConfig:
     gamma: float = None
 
     n_candidates: int = 5000
-    n_formulation_trials: int = 500 # Increase this number for more thorough optimization
+    n_formulation_trials: int = 1000 # Increase this number for more thorough optimization
     n_suggestions: int = 5
 
     def __post_init__(self):
