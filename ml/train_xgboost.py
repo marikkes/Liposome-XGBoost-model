@@ -327,6 +327,36 @@ def main():
     trials_df = formulation_study.trials_dataframe()
     print(trials_df.head())
 
+    valid_trials = trials_df[
+        trials_df["value"].notna()
+        & (trials_df["value"] > -100)
+    ]
+
+    print("\nPerformance by number of lipids:")
+    print(
+        valid_trials
+        .groupby("params_n_lipids")["value"]
+        .agg(
+            n_trials="count",
+            best="max",
+            mean="mean",
+            median="median",
+            std="std"
+        )
+        .sort_index()
+    )
+
+    invalid_trials = trials_df[
+        trials_df["value"] <= -100
+    ]
+
+    print("\nInvalid trials:")
+    print(
+        invalid_trials["params_n_lipids"]
+        .value_counts()
+        .sort_index()
+    )
+
     # DEBUGGING PLOTS, REMOVE WHEN NOT NEEDED
 
     # plot_optimization_history(formulation_study)

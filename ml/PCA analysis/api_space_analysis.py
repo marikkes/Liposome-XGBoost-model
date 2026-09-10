@@ -211,7 +211,7 @@ def main():
 
 
     # -----------------------
-    # Plot
+    # Plot: PC1 vs PC2
     # -----------------------
 
     plt.figure(figsize=(8,6))
@@ -233,15 +233,15 @@ def main():
 
 
     plt.xlabel(
-        "PC1"
+        f"PC1 ({variance[0]:.1%})"
     )
 
     plt.ylabel(
-        "PC2"
+        f"PC2 ({variance[1]:.1%})"
     )
 
     plt.title(
-        "API chemical space"
+        "API chemical space (PC1 vs PC2)"
     )
 
 
@@ -258,6 +258,64 @@ def main():
         f"PCA plot saved to:\n{plot_file}"
     )
 
+
+    plt.show()
+
+
+    # -----------------------
+    # Plot: PC1 vs PC2 vs PC3
+    # -----------------------
+
+    fig = plt.figure(figsize=(10, 8))
+
+    ax = fig.add_subplot(
+        111,
+        projection="3d"
+    )
+
+    ax.scatter(
+        X_pca[:, 0],
+        X_pca[:, 1],
+        X_pca[:, 2]
+    )
+
+    for i, api in enumerate(pca_apis["api"]):
+
+        ax.text(
+            X_pca[i, 0],
+            X_pca[i, 1],
+            X_pca[i, 2],
+            api,
+            fontsize=7
+        )
+
+    ax.set_xlabel(
+        f"PC1 ({variance[0]:.1%})"
+    )
+
+    ax.set_ylabel(
+        f"PC2 ({variance[1]:.1%})"
+    )
+
+    ax.set_zlabel(
+        f"PC3 ({variance[2]:.1%})"
+    )
+
+    ax.set_title(
+        "API chemical space (PC1–PC3)"
+    )
+
+    plot_3d_file = BASE_DIR / "api_pca_plot_3d.png"
+
+    plt.savefig(
+        plot_3d_file,
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    print(
+        f"3D PCA plot saved to:\n{plot_3d_file}"
+    )
 
     plt.show()
 

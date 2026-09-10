@@ -75,7 +75,21 @@ def make_dataset(db_path: Path, api_db_path: Path, lipid_db_path: Path):
     "lipid_2_fraction",
     "lipid_3_fraction"
     ]
-    lipid_feature_cols = list(lipid_features.columns)
+
+    lipid_feature_cols = [
+        c for c in lipid_features.columns
+        if c not in [
+            "lipid_1_smiles",
+            "lipid_1_smiles_source",
+            "lipid_1_descriptor_source",
+            "lipid_2_smiles",
+            "lipid_2_smiles_source",
+            "lipid_2_descriptor_source",
+            "lipid_3_smiles",
+            "lipid_3_smiles_source",
+            "lipid_3_descriptor_source",
+        ]
+    ]
 
     feature_cols = ([
         "n_lipids",
