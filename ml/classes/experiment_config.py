@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from classes.pca_model import PCAModel
 import pandas as pd
+import numpy as np
 
 from get_api_profile import get_api_profile, load_api_properties
 
@@ -14,6 +15,10 @@ class ExperimentConfig:
     api_name: str = "Azithromycin dihydrate" #Change this to the API you want to optimize for
     api_profile: dict = None
 
+    # API-to-lipid ratio constraints in log space
+    api_ratio_min: float = 1e-3
+    api_ratio_max: float = 1.0
+
     # split_mode:
     #     - within_api: split data within the same API, each API is split into train and test sets
     #     - api: split data across different APIs, whole APIs are either in train or test set
@@ -23,22 +28,29 @@ class ExperimentConfig:
     n_models: int = 5
 
     # acquisition_mode:
-    #     - exploitation: prioritize high predicted EE
-    #     - balanced: balance predicted EE and uncertainty
-    #     - exploration: balance predicted EE, uncertainty, and novelty
+    #     - exploitation: mostly prioritize high predicted EE
+    #     - balanced: balance predicted EE, uncertainty, and novelty
+    #     - exploration: strongly prioritize uncertainty and novelty
     
     acquisition_mode: str = "balanced"
+
+    beta: float = None # Weight of uncertainty
+    gamma: float = None # Weight of novelty
+
+    # Diversity selection:
+    #     - score_weight: importance of acquisition score
+    #     - diversity_weight: importance of distance between selected formulations
+
+    score_weight: float = 0.7
+    diversity_weight: float = 0.3
 
     lipid_selection_mode: str = "PCA"  # or "RANDOM"
     pca_model: PCAModel = None
     n_pca_components: int = 3
 
-    beta: float = None
-    gamma: float = None
-
     n_candidates: int = 5000
-    n_formulation_trials: int = 1000 # Increase this number for more thorough optimization
-    n_suggestions: int = 5
+    n_formulation_trials: int = 1000 # Increase this value for more thorough optimization
+    n_suggestions: int = 5 #Change this value to switch between batch BO (n>1) and single BO (n=1)
 
     def __post_init__(self):
 
@@ -62,6 +74,12 @@ class ExperimentConfig:
                 api_df
             )
 
+        if self.api_ratio_min <= 0:
+            raise ValueError("api_ratio_min must be greater than 0")
+
+        if self.api_ratio_max <= self.api_ratio_min:
+            raise ValueError("api_ratio_max must be greater than api_ratio_min")
+
         # -----------------------
         # Acquisition settings
         # -----------------------
@@ -83,3 +101,15 @@ class ExperimentConfig:
 
         if self.gamma is None:
             self.gamma = settings[self.acquisition_mode][1]
+
+        # -----------------------
+        # Diversity selection
+        # -----------------------
+
+        if not np.isclose(
+            self.score_weight + self.diversity_weight,
+            1.0
+        ):
+            raise ValueError(
+                "score_weight and diversity_weight must sum to 1."
+            )

@@ -1,7 +1,5 @@
 from pathlib import Path
 import numpy as np
-import pandas as pd
-import joblib
 from sklearn.metrics import pairwise_distances
 from sklearn.preprocessing import StandardScaler
 
@@ -10,6 +8,7 @@ from make_dataset import make_dataset
 from lipid_utils import get_lipid_type_fraction_columns, sort_lipids, extract_present_lipids, lipid_name_from_column
 from formulation_utils import generate_candidates, load_pca_model
 from classes.experiment_config import ExperimentConfig
+from ml_utils import predict_with_uncertainty, load_models
 
 
 def compute_novelty(candidates, X_existing):
@@ -29,17 +28,6 @@ def compute_novelty(candidates, X_existing):
     min_dist = distances.min(axis=1)  # nærmeste nabo
 
     return min_dist
-
-# -----------------------------
-# Ensemble prediction
-# -----------------------------
-def predict_with_uncertainty(models, X):
-    preds = np.array([m.predict(X) for m in models])
-
-    mean = preds.mean(axis=0)
-    std = preds.std(axis=0)
-
-    return mean, std
 
 # -----------------------------
 # Normalization function
@@ -72,75 +60,92 @@ def acquisition(mean, std, novelty, beta, gamma):
         + beta * std_norm
         + gamma * novelty_norm
     )
-#Want to obtain max EE and max uncertainty and difference from previous results
 
 # -----------------------------
-# Load ensemble models
+# Select a diverse batch of high-acquisition experiments
 # -----------------------------
-def load_models(path, n_models=5):
-    models = []
-    for i in range(n_models):
-        model = joblib.load(path / f"xgb_model_{i}.pkl")
-        models.append(model)
-    return models
+def select_diverse_top(df, X_columns, n_select, score_weight,
+    diversity_weight):
+    """
+    Select diverse high-acquisition formulations.
 
-# -----------------------------
-# Selects 5 different experiments, added as we were getting 5 equal ones
-# -----------------------------
-def select_diverse_top(df, n_select=10, random_state=42):
+    The highest-scoring candidate is selected first.
+    For batch selection, subsequent candidates balance
+    acquisition score and diversity.
     """
-    Select diverse formulations using max-min distance sampling.
-    
-    Parameters:
-        df (pd.DataFrame): full dataset
-        n_select (int): number of formulations to select
-    
-    Returns:
-        pd.DataFrame: selected subset
-    """
+
     df = df.copy()
-    
+
+    if n_select == 1:
+        return df.loc[[df["score"].idxmax()]]
+
     # -------------------------
-    # 1. Define feature columns
-    # -------------------------
-    X_columns = [
-        col for col in df.columns
-        if not col.endswith("_missing")
-    ]
-    
-    # Remove anything non-numeric just in case
-    X_columns = [col for col in X_columns if pd.api.types.is_numeric_dtype(df[col])]
-    
-    # -------------------------
-    # 2. Scale features
+    # 1. Scale formulation features
     # -------------------------
     scaler = StandardScaler()
-    X = scaler.fit_transform(df[X_columns])
+
+    X = scaler.fit_transform(
+        df[X_columns].fillna(0)
+    )
+
+    # -------------------------
+    # 2. Start with highest acquisition score
+    # -------------------------
+    selected_idx = [
+        df["score"].idxmax()
+    ]
+
+    remaining_idx = [
+        idx for idx in df.index
+        if idx not in selected_idx
+    ]
     
     # -------------------------
-    # 3. Max-min selection
+    # 3. Select remaining candidates
     # -------------------------
-    rng = np.random.RandomState(random_state)
-    
-    # Start with a random point
-    selected_idx = [rng.randint(len(df))]
-    remaining_idx = list(set(range(len(df))) - set(selected_idx))
-    
-    for _ in range(n_select - 1):
-        selected_points = X[selected_idx]
-        remaining_points = X[remaining_idx]
-        
-        # Compute distance to closest selected point
-        distances = pairwise_distances(remaining_points, selected_points)
+    while len(selected_idx) < min(n_select, len(df)):
+
+        selected_positions = [
+            df.index.get_loc(idx)
+            for idx in selected_idx
+        ]
+
+        remaining_positions = [
+            df.index.get_loc(idx)
+            for idx in remaining_idx
+        ]
+
+        distances = pairwise_distances(
+            X[remaining_positions],
+            X[selected_positions]
+        )
+
         min_distances = distances.min(axis=1)
-        
-        # Pick the point farthest away
-        next_idx = remaining_idx[np.argmax(min_distances)]
-        
+
+        # Normalize distance and acquisition score
+        distance_norm = normalize(min_distances)
+
+        score_values = df.loc[
+            remaining_idx,
+            "score"
+        ].to_numpy()
+
+        score_norm = normalize(score_values)
+
+        # Balance acquisition quality and diversity
+        combined_score = (
+            score_weight * score_norm
+            + diversity_weight * distance_norm
+        )
+
+        best_position = np.argmax(combined_score)
+
+        next_idx = remaining_idx[best_position]
+
         selected_idx.append(next_idx)
         remaining_idx.remove(next_idx)
-    
-    return df.iloc[selected_idx]
+
+    return df.loc[selected_idx]
 
 # -----------------------------
 # Suggest experiments
@@ -158,7 +163,13 @@ def suggest_next(config: ExperimentConfig, X_existing):
 
     candidates["score"] = acquisition(mean, std, novelty, beta=config.beta, gamma=config.gamma)
 
-    top = select_diverse_top(candidates, config.n_suggestions)
+    top = select_diverse_top(
+        candidates,
+        X_columns=config.X_columns,
+        n_select=config.n_suggestions,
+        score_weight=config.score_weight,
+        diversity_weight=config.diversity_weight
+    )
 
     return top
 
@@ -215,7 +226,6 @@ def main():
         models=[],
         X_columns=X.columns,
         api_db_path=API_DB_PATH,
-        acquisition_mode="exploration",
     )
 
     config.api_profile = preprocess_api_profile(config.api_profile, X)

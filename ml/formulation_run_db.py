@@ -17,6 +17,7 @@ def _create_run_table(cur):
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         created_at TEXT NOT NULL,
         api_name TEXT,
+        run_type TEXT,
         comment TEXT,
         best_predicted_ee REAL,
         n_lipids INTEGER,
@@ -40,6 +41,17 @@ def ensure_run_db(db_path: Path):
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     _create_run_table(cur)
+
+    # Add run_type to existing databases if it is not already present
+    cur.execute("PRAGMA table_info(formulation_runs)")
+    columns = [row[1] for row in cur.fetchall()]
+
+    if "run_type" not in columns:
+        cur.execute(
+            "ALTER TABLE formulation_runs "
+            "ADD COLUMN run_type TEXT"
+        )
+
     conn.commit()
     conn.close()
 
@@ -83,6 +95,7 @@ def _flatten_formulation_params(best_formulation: dict) -> tuple:
 def save_run(
     db_path: Path,
     api_name: str,
+    run_type: str,
     comment: str,
     best_predicted_ee: float,
     best_formulation: dict,
@@ -91,8 +104,34 @@ def save_run(
     training_r2: float,
 ):
     ensure_run_db(db_path)
-    best_predicted_ee = _round_value(best_predicted_ee)
-    n_lipids, api_ratio, lipid_1, lipid_2, lipid_3, w_1, w_2, w_3 = _flatten_formulation_params(best_formulation)
+
+    best_predicted_ee = (
+        _round_value(best_predicted_ee)
+        if best_predicted_ee is not None
+        else None
+    )
+    
+    if best_formulation is not None:
+        (
+            n_lipids,
+            api_ratio,
+            lipid_1,
+            lipid_2,
+            lipid_3,
+            w_1,
+            w_2,
+            w_3,
+        ) = _flatten_formulation_params(best_formulation)
+    else:
+        n_lipids = None
+        api_ratio = None
+        lipid_1 = None
+        lipid_2 = None
+        lipid_3 = None
+        w_1 = None
+        w_2 = None
+        w_3 = None
+
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute(
@@ -100,6 +139,7 @@ def save_run(
         INSERT INTO formulation_runs (
             created_at,
             api_name,
+            run_type,
             comment,
             best_predicted_ee,
             n_lipids,
@@ -115,11 +155,12 @@ def save_run(
             training_r2,
             best_formulation,
             model_params
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             api_name,
+            run_type,
             comment,
             best_predicted_ee,
             n_lipids,
