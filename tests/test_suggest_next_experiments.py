@@ -50,7 +50,14 @@ def test_suggest_next_adds_scoring_columns(monkeypatch):
         np.array([1.0, 2.0, 3.0]),
     ))
     monkeypatch.setattr(sne, "compute_novelty", lambda *_args, **_kwargs: np.array([0.5, 0.4, 0.3]))
-    monkeypatch.setattr(sne, "select_diverse_top", lambda df, n_select: df.nlargest(n_select, "score"))
+    monkeypatch.setattr(
+        sne,
+        "select_diverse_top",
+        lambda df, **kwargs: df.nlargest(
+            kwargs["n_select"],
+            "score"
+        )
+    )
 
     top = sne.suggest_next(config, X_existing)
 

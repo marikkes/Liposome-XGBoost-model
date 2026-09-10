@@ -191,7 +191,7 @@ def main():
     comment = input("Describe the changes from the previous run:\n> ").strip()
 
     if not comment:
-            raise RuntimeError("A comment is required to save this run.")
+        raise RuntimeError("A comment is required to save this run.")
 
     save_run(
         run_db_path,

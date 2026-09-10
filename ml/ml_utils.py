@@ -3,7 +3,7 @@ import joblib
 
 def predict_ensemble(models, X):
     if not models:
-         raise ValueError("Models is empty; load/train models before calling predict_ensemble().")
+        raise ValueError("Models is empty; load/train models before calling predict_ensemble().")
     
     predictions = np.array([
         model.predict(X)

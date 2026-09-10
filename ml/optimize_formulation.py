@@ -3,7 +3,6 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import joblib
 import optuna
 
 from make_dataset import make_dataset
@@ -11,7 +10,7 @@ from lipid_utils import get_available_lipids, lipid_name_from_column
 from formulation_utils import choose_lipid_from_pca_trial, sort_lipid_weight_pairs, build_formulation_row, generate_lipid_weights, load_pca_model
 from formulation_run_db import get_run_db_path, save_run
 from classes.experiment_config import ExperimentConfig
-from ml_utils import predict_ensemble
+from ml_utils import predict_ensemble, load_models
 
 def formulation_objective(trial, config: ExperimentConfig):
     # Choose number of lipids (1, 2, or 3)
@@ -78,7 +77,7 @@ def formulation_objective(trial, config: ExperimentConfig):
     df = pd.DataFrame([row])
 
     # Predict EE using the ensemble of trained models
-    pred = predict_ensemble(config, df)[0]
+    pred = predict_ensemble(config.models, df)[0]
 
     # Formulation penalties
     penalty = 0.0
@@ -93,19 +92,19 @@ def formulation_objective(trial, config: ExperimentConfig):
 
     # Save formulation details to the trial
     trial.set_user_attr(
-    "formulation",
-    {
-        "n_lipids": len(chosen),
-        "api_ratio": row["api_to_lipid_ratio"],
+        "formulation",
+        {
+            "n_lipids": len(chosen),
+            "api_ratio": row["api_to_lipid_ratio"],
 
-        "lipid_0": chosen[0] if len(chosen) > 0 else None,
-        "lipid_1": chosen[1] if len(chosen) > 1 else None,
-        "lipid_2": chosen[2] if len(chosen) > 2 else None,
+            "lipid_0": chosen[0] if len(chosen) > 0 else None,
+            "lipid_1": chosen[1] if len(chosen) > 1 else None,
+            "lipid_2": chosen[2] if len(chosen) > 2 else None,
 
-        "w_0": float(weights[0]) if len(weights) > 0 else None,
-        "w_1": float(weights[1]) if len(weights) > 1 else None,
-        "w_2": float(weights[2]) if len(weights) > 2 else None,
-    }
+            "w_0": float(weights[0]) if len(weights) > 0 else None,
+            "w_1": float(weights[1]) if len(weights) > 1 else None,
+            "w_2": float(weights[2]) if len(weights) > 2 else None,
+        }
     )
 
     return pred - penalty
@@ -135,15 +134,7 @@ def main():
     # Load trained models
     # -----------------------------
 
-    models = []
-
-    for i in range(5):
-
-        model = joblib.load(
-            MODEL_DIR / f"xgb_model_{i}.pkl"
-        )
-
-        models.append(model)
+    models = load_models(MODEL_DIR, n_models=5)
 
     print(f"Loaded {len(models)} trained models.")
 
@@ -269,7 +260,7 @@ def main():
     comment = input("Describe the changes from the previous run:\n> ").strip()
 
     if not comment:
-            raise RuntimeError("A comment is required to save this run.")
+        raise RuntimeError("A comment is required to save this run.")
 
     save_run(
         run_db_path,
