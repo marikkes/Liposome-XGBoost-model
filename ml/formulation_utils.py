@@ -35,7 +35,7 @@ def load_pca_model(n_components):
     lipid_scores = pca_model["scores"][:, :n_components]
     pca = pca_model["pca"]
 
-    nn = NearestNeighbors(n_neighbors=1)
+    nn = NearestNeighbors(n_neighbors=len(lipid_names))
     nn.fit(lipid_scores)
 
     return PCAModel(
@@ -54,8 +54,7 @@ def nearest_lipid(point, pca_model, used_lipids=None):
         used_lipids = []
 
     _, indices = pca_model.nn.kneighbors(
-        point.reshape(1, -1),
-        n_neighbors=len(pca_model.lipid_names)
+        point.reshape(1, -1)
     )
     
     for idx in indices[0]:
@@ -104,24 +103,29 @@ def choose_lipids_pca(n_lipids, config: ExperimentConfig):
 # -----------------------------
 # Candidate generation
 # -----------------------------
-def generate_candidates(config: ExperimentConfig, n_samples=5000):
+def generate_candidates(config: ExperimentConfig):
     candidates = []
 
-    for _ in range(n_samples):
-        # choose 1–3 lipids, sort them based on type
+    while len(candidates) < config.n_candidates:
+        # choose 1–3 lipids and sort them based on type
         chosen = choose_lipids(config)
         chosen = sort_lipids(chosen)
 
         weights = np.random.dirichlet(np.ones(len(chosen)))
 
+        if min(weights) < 0.05: # Enforces a minimum lipid fraction of 5%, preventing candidates with very small fractions of a lipid
+            continue
+
         row = build_formulation_row(
             X_columns=config.X_columns,
             chosen_lipids=chosen,
             weights=weights,
-            api_ratio=np.random.uniform(0.05, 0.20),
+            api_ratio=10 ** np.random.uniform(
+                np.log10(config.api_ratio_min),
+                np.log10(config.api_ratio_max),
+            ),
             api_profile=config.api_profile,
         )
-
 
         candidates.append(row)
 

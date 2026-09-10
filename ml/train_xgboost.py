@@ -1,10 +1,10 @@
 from pathlib import Path
 
 from make_dataset import make_dataset
-from formulation_run_db import get_run_db_path, save_run
-from lipid_utils import get_available_lipids, lipid_name_from_column
-from formulation_utils import choose_lipid_from_pca_trial, generate_candidates, sort_lipid_weight_pairs, build_formulation_row, generate_lipid_weights, load_pca_model
 from classes.experiment_config import ExperimentConfig
+from formulation_utils import load_pca_model
+from formulation_run_db import get_run_db_path, save_run
+from ml_utils import predict_ensemble
 
 from sklearn.model_selection import cross_val_score, GroupKFold
 from train_test_splits import create_split
@@ -15,7 +15,6 @@ import optuna
 import numpy as np
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
 
 def objective(trial, X, y, groups):
     params = {
@@ -54,122 +53,6 @@ def objective(trial, X, y, groups):
 
     # We are trying to find hyperparameters to minimize the mean absolute error across the groups, so we return the negative of the mean score.
     return -np.mean(scores)
-
-def suggest_formulations(config: ExperimentConfig):
-    candidates = generate_candidates(config)
-
-    preds = predict_ensemble(config, candidates)
-
-    candidates["predicted_ee"] = preds
-
-    top = candidates.sort_values("predicted_ee", ascending=False).head(5)
-
-    return top
-
-def formulation_objective(trial, config: ExperimentConfig):
-    # velg antall lipider
-    n_lipids = trial.suggest_categorical("n_lipids", [1, 2, 3])
-
-    # optuna velger lipider
-    if config.lipid_selection_mode == "PCA":
-        chosen = [
-            choose_lipid_from_pca_trial(
-                trial,
-                i,
-                config
-            )
-            for i in range(n_lipids)
-        ]
-    
-    elif config.lipid_selection_mode == "RANDOM":
-        lipid_columns = get_available_lipids(config.X_columns)
-
-        lipids = [
-            lipid_name_from_column(col)
-            for col in lipid_columns
-        ]
-    
-        chosen = [
-            trial.suggest_categorical(f"lipid_{i}", lipids)
-            for i in range(n_lipids)
-        ]
-    else:
-        raise ValueError(
-            "Unknown lipid selection mode"
-        )
-
-    # Reject duplicates
-    if len(set(chosen)) != len(chosen):
-        return -1e6
-
-    # Generate weights for the chosen lipids 
-    weights = generate_lipid_weights(trial, n_lipids)
-
-    # Sort lipids AND weights together
-    chosen, weights = sort_lipid_weight_pairs(
-        chosen,
-        weights
-        )
-
-    # Range for api_to_lipid_ratio: 0.001 to 1.0 (log scale), change if needed
-    api_ratio = trial.suggest_float(
-        "api_ratio",
-        1e-3,
-        1.0,
-        log=True
-    )
-
-    row = build_formulation_row(
-        X_columns=config.X_columns,
-        chosen_lipids=chosen,
-        weights=weights,
-        api_ratio=api_ratio,
-        api_profile=config.api_profile
-    )
-
-    df = pd.DataFrame([row])
-    pred = predict_ensemble(config, df)[0]
-    #trial.set_user_attr("formulation", row)
-
-    penalty = 0.0
-
-    # straff hvis én lipid dominerer for mye
-    if max(weights) > 0.95:
-        penalty += 2
-
-    # straff hvis en lipid har for liten andel
-    if min(weights) < 0.05:
-        penalty += 2
-
-    trial.set_user_attr(
-    "formulation",
-    {
-        "n_lipids": len(chosen),
-        "api_ratio": row["api_to_lipid_ratio"],
-
-        "lipid_0": chosen[0] if len(chosen) > 0 else None,
-        "lipid_1": chosen[1] if len(chosen) > 1 else None,
-        "lipid_2": chosen[2] if len(chosen) > 2 else None,
-
-        "w_0": float(weights[0]) if len(weights) > 0 else None,
-        "w_1": float(weights[1]) if len(weights) > 1 else None,
-        "w_2": float(weights[2]) if len(weights) > 2 else None,
-    }
-    )
-
-    return pred - penalty
-
-def predict_ensemble(config: ExperimentConfig, X):
-    if not config.models:
-         raise ValueError("ExperimentConfig.models is empty; load/train models before calling predict_ensemble().")
-    
-    predictions = np.array([
-        model.predict(X)
-        for model in config.models
-    ])
-
-    return predictions.mean(axis=0)
-
 
 def main():
     # ---------- Finn database ----------
@@ -270,11 +153,8 @@ def main():
     if config.lipid_selection_mode == "PCA":
         config.pca_model = load_pca_model(config.n_pca_components)
 
-    top = suggest_formulations(config)
-    print(top.T)
-
     # ---------- Evaluering ----------
-    y_pred = predict_ensemble(config, X_test)
+    y_pred = predict_ensemble(config.models, X_test)
 
     mae = mean_absolute_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
@@ -306,174 +186,31 @@ def main():
     print("Feature importance:")
     print(importance_df.head(20))
 
-    print("\nTop suggested formulations:")
-
-    print("\nOptimizing formulations with Bayesian optimization...")
-
-    formulation_study = optuna.create_study(direction="maximize")
-
-    formulation_study.optimize(
-        lambda trial: formulation_objective(trial, config),
-        n_trials=config.n_formulation_trials
-    )
-
-    print("\nBest formulation found:")
-    print(formulation_study.best_params)
-    best_formulation = formulation_study.best_trial.user_attrs["formulation"]
-    print(best_formulation)
-
-    #Optimization history plot
-    #------------------------------
-    trials_df = formulation_study.trials_dataframe()
-    print(trials_df.head())
-
-    valid_trials = trials_df[
-        trials_df["value"].notna()
-        & (trials_df["value"] > -100)
-    ]
-
-    print("\nPerformance by number of lipids:")
-    print(
-        valid_trials
-        .groupby("params_n_lipids")["value"]
-        .agg(
-            n_trials="count",
-            best="max",
-            mean="mean",
-            median="median",
-            std="std"
-        )
-        .sort_index()
-    )
-
-    invalid_trials = trials_df[
-        trials_df["value"] <= -100
-    ]
-
-    print("\nInvalid trials:")
-    print(
-        invalid_trials["params_n_lipids"]
-        .value_counts()
-        .sort_index()
-    )
-
-    # DEBUGGING PLOTS, REMOVE WHEN NOT NEEDED
-
-    # plot_optimization_history(formulation_study)
-
-    # trial_data = []
-
-    # for trial in formulation_study.trials:
-    #     if "formulation" in trial.user_attrs:
-    #         row = trial.user_attrs["formulation"].copy()
-
-    #         row["trial"] = trial.number
-    #         row["value"] = trial.value
-
-    #     trial_data.append(row)
-
-    # trial_df = pd.DataFrame(trial_data)
-
-    # print(
-    #     trial_df["lipid_0"].value_counts()
-    # )
-
-    # print(
-    #     trial_df["lipid_1"].value_counts()
-    # )
-
-    # print("Top suggested formulations:")
-    # top_trials = (
-    #     trial_df
-    #     .sort_values("value", ascending=False)
-    #     .head(20)
-    # )
-
-    # print(top_trials)
-
-    values = [
-        t.value
-        for t in formulation_study.trials
-        if t.value > 0
-    ]
-
-    # plt.figure(figsize=(8,5))
-    # plt.plot(values)
-    # plt.xlabel("Valid trial")
-    # plt.ylabel("Predicted EE")
-    # plt.title("Optuna convergence")
-    # plt.show()
-
-    # plt.figure(figsize=(8,5))
-    # plt.scatter(
-    #     X["api_to_lipid_ratio"],
-    #     y
-    # )
-
-    # plt.xlabel("API/lipid ratio")
-    # plt.ylabel("EE%")
-    # plt.title("Training data: API ratio vs EE")
-    # plt.show()
-
-    trials_df = formulation_study.trials_dataframe()
-
-    print(
-        trials_df["params_n_lipids"].value_counts()
-    )
-
-
-    best_so_far = []
-
-    current_best = -np.inf
-
-    for value in values:
-        current_best = max(current_best, value)
-        best_so_far.append(current_best)
-
-
-    plt.figure(figsize=(8,5))
-
-    plt.plot(best_so_far)
-
-    plt.xlabel("Valid trial")
-    plt.ylabel("Best predicted EE so far")
-    plt.title("Optuna convergence")
-
-    plt.savefig(
-         MODEL_DIR / "optuna_convergence.png",
-         dpi=300,
-         bbox_inches="tight"
-     )
-    plt.close()
-    #------------------------------
-
-    print("\nPredicted EE:")
-    print(formulation_study.best_value)
-
     run_db_path = get_run_db_path(BASE_DIR)
-
+    
     comment = input("Describe the changes from the previous run:\n> ").strip()
 
     if not comment:
-            raise RuntimeError("A comment is required to save this run.")
+        raise RuntimeError("A comment is required to save this run.")
 
     save_run(
         run_db_path,
         config.api_name,
+        "training",
         comment,
-        float(formulation_study.best_value),
-        best_formulation,
+        None,
+        None,
         {
             "training_model_params": study.best_params,
-            "formulation_optimization_trials": formulation_study.best_trial.number,
+            "split_mode": SPLIT_MODE,
+            "n_trials": len(study.trials),
+            "n_models": len(models),
         },
         float(mae),
         float(r2),
     )
 
     print(f"\n✅ Run saved to database: {run_db_path}")
-
-
 
 if __name__ == "__main__":
     main()
